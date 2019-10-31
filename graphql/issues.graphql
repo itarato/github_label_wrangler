@@ -1,0 +1,23 @@
+query {
+  repository(owner: "Shopify", name: "store") {
+    issues(first: 10, labels: [
+      "pricing/bug"
+    ]) {
+      edges {
+        node {
+          id
+          title
+          labels(first: 10) {
+            edges {
+              cursor
+              node {
+                id
+                name
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
