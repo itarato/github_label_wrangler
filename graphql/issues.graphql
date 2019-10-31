@@ -1,13 +1,13 @@
-query {
-  repository(owner: "Shopify", name: "store") {
-    issues(first: 10, labels: [
+query ($org: String!, $repo:String!) {
+  repository(owner: $org, name: $repo) {
+    issues(first: 32, labels: [
       "pricing/bug"
     ]) {
       edges {
         node {
           id
           title
-          labels(first: 10) {
+          labels(first: 32) {
             edges {
               cursor
               node {

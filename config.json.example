@@ -1,3 +1,6 @@
 {
-    "github_api_token": "<<TOKEN>>"
+    "github_api_token": "<<TOKEN>>",
+    "user": "<<GITHUB USER>>",
+    "org": "<<ORG NAME>>",
+    "repo": "<<REPO NAME>>"
 }

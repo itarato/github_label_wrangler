@@ -8,7 +8,6 @@ extern crate serde_derive;
 use hyper::rt::{self, Future, Stream};
 use hyper::{Body, Client, Method, Request};
 use hyper_tls::HttpsConnector;
-use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::fs::File;
 use std::io::Read;
@@ -17,6 +16,9 @@ use std::str;
 #[derive(Serialize, Deserialize, Debug)]
 struct Config {
     github_api_token: String,
+    user: String,
+    org: String,
+    repo: String,
 }
 
 impl Config {
@@ -50,7 +52,10 @@ fn fetch_and_run(uri: hyper::Uri, config: &Config) -> impl Future<Item = (), Err
         .filter(|&ch| ch != '\n')
         .collect::<String>();
 
-    let json = format!(r#"{{"query": {:?}}}"#, json_content);
+    let json = format!(
+        r#"{{"query": {:?}, "variables": {{"org":{:?}, "repo":{:?} }} }}"#,
+        json_content, config.org, config.repo
+    );
     let mut req = Request::new(Body::from(json));
     *req.method_mut() = Method::POST;
     *req.uri_mut() = uri.clone();
@@ -64,28 +69,21 @@ fn fetch_and_run(uri: hyper::Uri, config: &Config) -> impl Future<Item = (), Err
     );
     req.headers_mut().insert(
         hyper::header::USER_AGENT,
-        hyper::header::HeaderValue::from_static("itarato"),
+        hyper::header::HeaderValue::from_str(config.user.as_ref()).unwrap(),
     );
 
     client
         .request(req)
         .and_then(|res| res.into_body().concat2())
         .map(|a| {
-            // let res = dbg!(str::from_utf8(&a.into_bytes()).unwrap());
             let v: Value = serde_json::from_str(str::from_utf8(&a.into_bytes()).unwrap()).unwrap();
-            for x in serde_json_dig::dig(
-                v.clone(),
-                &[
-                    serde_json_dig::Shovel::Key("data"),
-                    serde_json_dig::Shovel::Key("repository"),
-                    serde_json_dig::Shovel::Key("issues"),
-                    serde_json_dig::Shovel::Key("edges"),
-                ],
-            )
-            .unwrap()
-            .as_array()
-            .unwrap()
-            {
+            let edges: Option<&Vec<Value>> = v
+                .get("data")
+                .and_then(|v| v.get("repository"))
+                .and_then(|v| v.get("issues"))
+                .and_then(|v| v.get("edges"))
+                .and_then(|v| v.as_array());
+            for x in edges.unwrap() {
                 println!(
                     "Issue: {}",
                     x.as_object().unwrap()["node"].as_object().unwrap()["title"]
