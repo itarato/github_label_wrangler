@@ -1,17 +1,13 @@
-extern crate hyper;
-extern crate hyper_tls;
+extern crate reqwest;
 extern crate serde;
-extern crate serde_json;
-#[macro_use]
 extern crate serde_derive;
+extern crate serde_json;
 
-use hyper::rt::{self, Future, Stream};
-use hyper::{Body, Client, Method, Request};
-use hyper_tls::HttpsConnector;
+use reqwest::header::{HeaderMap, HeaderValue, AUTHORIZATION, USER_AGENT};
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::fs::File;
 use std::io::Read;
-use std::str;
 
 #[derive(Serialize, Deserialize, Debug)]
 struct Config {
@@ -33,66 +29,174 @@ impl Config {
     }
 }
 
-fn main() {
-    let uri: hyper::Uri = "https://api.github.com/graphql".parse().unwrap();
-    let config = Config::load().unwrap();
-    rt::run(fetch_and_run(uri, &config));
+fn github_headers(api_token: String) -> HeaderMap {
+    let mut hm = HeaderMap::new();
+    hm.insert(
+        AUTHORIZATION,
+        HeaderValue::from_str(format!("bearer {}", api_token).as_ref()).unwrap(),
+    );
+    hm.insert(USER_AGENT, HeaderValue::from_static("itarato"));
+    hm
 }
 
-fn fetch_and_run(uri: hyper::Uri, config: &Config) -> impl Future<Item = (), Error = ()> {
-    let connector = HttpsConnector::new(4).unwrap();
-    let client = Client::builder().build::<_, hyper::Body>(connector);
+#[derive(Debug)]
+struct Issue {
+    title: String,
+    labels: Vec<String>,
+}
 
-    let mut json_content: String = String::new();
-    let mut json_file = File::open("./graphql/issues.graphql").unwrap();
-    let _ = json_file.read_to_string(&mut json_content).unwrap();
+impl Issue {
+    fn new(title: String, labels: Vec<String>) -> Issue {
+        Issue { title, labels }
+    }
+}
 
-    json_content = json_content
-        .chars()
-        .filter(|&ch| ch != '\n')
-        .collect::<String>();
+#[derive(Serialize, Deserialize, Debug)]
+struct IssueLoaderVariablePack {
+    org: String,
+    repo: String,
+    assignee: Option<String>,
+    cursor: Option<String>,
+}
 
-    let json = format!(
-        r#"{{"query": {:?}, "variables": {{"org":{:?}, "repo":{:?} }} }}"#,
-        json_content, config.org, config.repo
-    );
-    let mut req = Request::new(Body::from(json));
-    *req.method_mut() = Method::POST;
-    *req.uri_mut() = uri.clone();
+impl IssueLoaderVariablePack {
+    fn new(
+        org: String,
+        repo: String,
+        assignee: Option<String>,
+        cursor: Option<String>,
+    ) -> IssueLoaderVariablePack {
+        IssueLoaderVariablePack {
+            org,
+            repo,
+            assignee,
+            cursor,
+        }
+    }
+}
 
-    req.headers_mut().insert(
-        hyper::header::AUTHORIZATION,
-        hyper::header::HeaderValue::from_str(
-            format!("bearer {}", config.github_api_token).as_ref(),
-        )
-        .unwrap(),
-    );
-    req.headers_mut().insert(
-        hyper::header::USER_AGENT,
-        hyper::header::HeaderValue::from_str(config.user.as_ref()).unwrap(),
-    );
+struct IssueLoader<'a> {
+    config: &'a Config,
+    issues: Vec<Issue>,
+    assignee: Option<String>,
+}
 
-    client
-        .request(req)
-        .and_then(|res| res.into_body().concat2())
-        .map(|a| {
-            let v: Value = serde_json::from_str(str::from_utf8(&a.into_bytes()).unwrap()).unwrap();
-            let edges: Option<&Vec<Value>> = v
-                .get("data")
-                .and_then(|v| v.get("repository"))
-                .and_then(|v| v.get("issues"))
-                .and_then(|v| v.get("edges"))
-                .and_then(|v| v.as_array());
-            for x in edges.unwrap() {
-                println!(
-                    "Issue: {}",
-                    x.as_object().unwrap()["node"].as_object().unwrap()["title"]
-                );
+impl<'a> IssueLoader<'a> {
+    fn new(config: &'a Config, assignee: Option<String>) -> IssueLoader {
+        IssueLoader {
+            config,
+            issues: Vec::new(),
+            assignee,
+        }
+    }
+
+    fn load(&mut self) {
+        let mut cursor: Option<String> = None;
+        loop {
+            let current_cursor = cursor.clone();
+            cursor = self.fetch_page(current_cursor);
+
+            if cursor.is_none() {
+                break;
             }
+        }
+    }
 
-            ()
-        })
-        .map_err(|err| {
-            eprintln!("Error {}", err);
-        })
+    fn fetch_page(&mut self, cursor: Option<String>) -> Option<String> {
+        let mut json_content: String = String::new();
+        let mut json_file = File::open("./graphql/issues.graphql").unwrap();
+        let _ = json_file.read_to_string(&mut json_content).unwrap();
+
+        json_content = json_content
+            .chars()
+            .filter(|&ch| ch != '\n')
+            .collect::<String>();
+
+        let variable_pack = IssueLoaderVariablePack::new(
+            self.config.org.clone(),
+            self.config.repo.clone(),
+            self.assignee.clone(),
+            cursor,
+        );
+
+        let json = format!(
+            r#"{{"query": {:?}, "variables": {:?} }}"#,
+            json_content,
+            serde_json::to_string(&variable_pack).unwrap(),
+        );
+
+        let cli = reqwest::Client::new();
+        let raw_result = cli
+            .post("https://api.github.com/graphql")
+            .headers(github_headers(self.config.github_api_token.clone()))
+            .body(json)
+            .send()
+            .unwrap()
+            .text()
+            .unwrap();
+
+        let result_json: Value = serde_json::from_str(raw_result.as_ref()).unwrap();
+        let issues: Option<&Vec<Value>> = result_json
+            .get("data")
+            .and_then(|v| v.get("repository"))
+            .and_then(|v| v.get("issues"))
+            .and_then(|v| v.get("edges"))
+            .and_then(|v| v.as_array());
+
+        let mut last_cursor: Option<String> = None;
+
+        issues.map(|issues| {
+            println!("Fetched {} issues.", issues.len());
+            let mut converted: Vec<Issue> = issues
+                .into_iter()
+                .map(|issue| {
+                    last_cursor = Some(
+                        issue
+                            .get("cursor")
+                            .and_then(|val| val.as_str())
+                            .unwrap()
+                            .into(),
+                    );
+
+                    let label_nodes: &Vec<Value> = issue
+                        .get("node")
+                        .and_then(|val| val.get("labels"))
+                        .and_then(|val| val.get("edges"))
+                        .and_then(|val| val.as_array())
+                        .unwrap();
+
+                    let labels: Vec<String> = label_nodes
+                        .into_iter()
+                        .map(|node| {
+                            node.get("node")
+                                .and_then(|val| val.get("name"))
+                                .and_then(|val| val.as_str())
+                                .unwrap()
+                                .into()
+                        })
+                        .collect();
+
+                    Issue::new(
+                        issue
+                            .get("node")
+                            .and_then(|val| val.get("title"))
+                            .and_then(|val| val.as_str())
+                            .unwrap()
+                            .into(),
+                        labels,
+                    )
+                })
+                .collect();
+            self.issues.append(&mut converted);
+        });
+
+        last_cursor
+    }
+}
+
+fn main() {
+    let config = Config::load().unwrap();
+    let mut il = IssueLoader::new(&config, Some("itarato".into()));
+    il.load();
+    dbg!(il.issues);
 }

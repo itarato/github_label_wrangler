@@ -1,15 +1,13 @@
-query ($org: String!, $repo:String!) {
+query ($org: String!, $repo:String!, $assignee:String, $cursor:String) {
   repository(owner: $org, name: $repo) {
-    issues(first: 32, labels: [
-      "pricing/bug"
-    ]) {
+    issues(first: 25, after: $cursor, filterBy: { assignee: $assignee, states: [OPEN] }) {
       edges {
+        cursor
         node {
           id
           title
-          labels(first: 32) {
+          labels(first: 50) {
             edges {
-              cursor
               node {
                 id
                 name
