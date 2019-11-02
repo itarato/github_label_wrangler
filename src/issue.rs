@@ -1,6 +1,6 @@
 use super::config::*;
 use super::loader::*;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use serde_json::Value;
 
 #[derive(Debug)]
@@ -22,7 +22,6 @@ pub fn load_issues(config: &Config) -> Vec<Issue> {
         config.org.clone(),
         config.repo.clone(),
         Some("itarato".into()),
-        None,
     );
     let mut loader = GraphQLLoader::new(
         "./graphql/issues.graphql".into(),
@@ -91,7 +90,7 @@ pub fn load_issues(config: &Config) -> Vec<Issue> {
     issues
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Debug)]
 pub struct IssueVariablePack {
     org: String,
     repo: String,
@@ -100,17 +99,12 @@ pub struct IssueVariablePack {
 }
 
 impl IssueVariablePack {
-    pub fn new(
-        org: String,
-        repo: String,
-        assignee: Option<String>,
-        cursor: Option<String>,
-    ) -> IssueVariablePack {
+    pub fn new(org: String, repo: String, assignee: Option<String>) -> IssueVariablePack {
         IssueVariablePack {
             org,
             repo,
             assignee,
-            cursor,
+            cursor: None,
         }
     }
 }
