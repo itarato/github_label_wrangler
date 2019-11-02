@@ -1,0 +1,12 @@
+query ($assignee:String!, $cursor:String) {
+  user(login: $assignee){
+    id
+    pullRequests(first: 25, after: $cursor, states: [OPEN]){
+      edges {
+        node {
+          title
+        }
+      }
+    }
+  }
+}
