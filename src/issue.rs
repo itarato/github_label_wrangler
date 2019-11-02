@@ -15,14 +15,10 @@ impl Issue {
     }
 }
 
-pub fn load_issues(config: &Config) -> Vec<Issue> {
+pub fn load_issues(config: &Config, assignee: String) -> Vec<Issue> {
     let mut issues = Vec::new();
 
-    let variables = IssueVariablePack::new(
-        config.org.clone(),
-        config.repo.clone(),
-        Some("itarato".into()),
-    );
+    let variables = IssueVariablePack::new(config.org.clone(), config.repo.clone(), Some(assignee));
     let mut loader = GraphQLLoader::new(
         "./graphql/issues.graphql".into(),
         config.github_api_token.clone(),

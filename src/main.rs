@@ -14,6 +14,7 @@ use pull_request::*;
 
 fn main() {
     let config = Config::load().unwrap();
-    dbg!(load_issues(&config));
-    dbg!(load_pull_requests(&config));
+    let assignee: String = "itarato".into();
+    dbg!(load_issues(&config, assignee.clone()));
+    dbg!(load_pull_requests(&config, assignee.clone()));
 }

@@ -4,8 +4,12 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct PullRequest {
     title: String,
+    created_at: String,
+    merged_at: Option<String>,
+    closed_at: Option<String>,
     id: String,
 }
 
@@ -30,10 +34,10 @@ impl CursorAble for PullRequestVariablePack {
     }
 }
 
-pub fn load_pull_requests(config: &Config) -> Vec<PullRequest> {
+pub fn load_pull_requests(config: &Config, assignee: String) -> Vec<PullRequest> {
     let mut prs = Vec::new();
 
-    let variables = PullRequestVariablePack::new("itarato".into());
+    let variables = PullRequestVariablePack::new(assignee);
 
     let mut loader = GraphQLLoader::new(
         "./graphql/pull_requests.graphql".into(),
