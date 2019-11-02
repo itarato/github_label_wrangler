@@ -8,6 +8,7 @@ query ($org: String!, $repo:String!, $assignee:String, $cursor:String) {
           title
           labels(first: 50) {
             edges {
+              cursor
               node {
                 id
                 name

@@ -3,7 +3,9 @@ query ($assignee:String!, $cursor:String) {
     id
     pullRequests(first: 25, after: $cursor, states: [OPEN]){
       edges {
+        cursor
         node {
+          id
           title
         }
       }
